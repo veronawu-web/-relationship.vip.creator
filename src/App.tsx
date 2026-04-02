@@ -76,18 +76,33 @@ export default function App() {
 
     svg.on('click', () => setSelectedNode(null)); // Click background to deselect
 
+    // Reset positions and fixed states to ensure they spread out
+    NODES.forEach(d => {
+      d.x = width / 2 + (Math.random() - 0.5) * 400;
+      d.y = height / 2 + (Math.random() - 0.5) * 400;
+      d.fx = null;
+      d.fy = null;
+    });
+
     const simulation = d3.forceSimulation<Node>(NODES)
-      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(140))
-      .force('charge', d3.forceManyBody().strength(-800))
+      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(200))
+      .force('charge', d3.forceManyBody().strength(-2000))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(80));
+      .force('collision', d3.forceCollide().radius(100))
+      .stop();
+
+    // Run simulation for a few ticks to get stable positions, then fix them
+    for (let i = 0; i < 300; ++i) simulation.tick();
+    NODES.forEach(d => {
+      d.fx = d.x;
+      d.fy = d.y;
+    });
 
     const updateDimensions = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
       svg.attr('width', w).attr('height', h);
-      simulation.force('center', d3.forceCenter(w / 2, h / 2));
-      simulation.alpha(0.3).restart();
+      // Re-center if needed, but keep relative positions
     };
 
     window.addEventListener('resize', updateDimensions);
@@ -208,39 +223,12 @@ export default function App() {
         return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg></div>`;
       });
 
-    simulation.on('tick', () => {
-      link
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
+    // Set initial positions
+    link.attr('x1', (d: any) => d.source.x).attr('y1', (d: any) => d.source.y).attr('x2', (d: any) => d.target.x).attr('y2', (d: any) => d.target.y);
+    linkHitArea.attr('x1', (d: any) => d.source.x).attr('y1', (d: any) => d.source.y).attr('x2', (d: any) => d.target.x).attr('y2', (d: any) => d.target.y);
+    node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
 
-      linkHitArea
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
-
-      node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-    });
-
-    // Update opacity based on search
-    const updateSearchHighlight = () => {
-      if (!searchQuery) {
-        node.style('opacity', 1);
-        link.style('opacity', d => 0.2 + d.intensity * 0.5);
-        return;
-      }
-      
-      const matchedIds = new Set(filteredNodes.map(n => n.id));
-      node.style('opacity', d => matchedIds.has(d.id) ? 1 : 0.1);
-      link.style('opacity', (d: any) => 
-        matchedIds.has(d.source.id) || matchedIds.has(d.target.id) ? 0.3 : 0.05
-      );
-    };
-
-    updateSearchHighlight();
-
+    // Initial fit to screen
     setTimeout(() => {
       const bounds = g.node()?.getBBox();
       if (bounds) {
@@ -282,7 +270,44 @@ export default function App() {
       simulation.stop();
       window.removeEventListener('resize', updateDimensions);
     };
-  }, [searchQuery, filteredNodes]);
+  }, []);
+
+  // Separate effect for search highlighting
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    const node = svg.selectAll('.node-group');
+    const link = svg.selectAll('.links-layer line:not(.hit-area)');
+
+    if (!searchQuery) {
+      node.style('opacity', 1).style('pointer-events', 'all');
+      link.style('opacity', (d: any) => 0.2 + d.intensity * 0.5);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const matchedNodes = NODES.filter(n => n.id.toLowerCase().includes(query));
+    const matchedIds = new Set(matchedNodes.map(n => n.id));
+    
+    const connectedStreamerIds = new Set<string>();
+    LINKS.forEach(l => {
+      const sourceId = typeof l.source === 'string' ? l.source : (l.source as any).id;
+      const targetId = typeof l.target === 'string' ? l.target : (l.target as any).id;
+      if (matchedIds.has(sourceId)) connectedStreamerIds.add(targetId);
+      if (matchedIds.has(targetId)) connectedStreamerIds.add(sourceId);
+    });
+
+    const allVisibleIds = new Set([...matchedIds, ...connectedStreamerIds]);
+
+    node.style('opacity', d => allVisibleIds.has((d as any).id) ? 1 : 0.05)
+        .style('pointer-events', d => allVisibleIds.has((d as any).id) ? 'all' : 'none');
+        
+    link.style('opacity', (d: any) => {
+      const sId = typeof d.source === 'string' ? d.source : d.source.id;
+      const tId = typeof d.target === 'string' ? d.target : d.target.id;
+      return (matchedIds.has(sId) || matchedIds.has(tId)) ? 0.6 : 0.02;
+    });
+  }, [searchQuery]);
 
   return (
     <div ref={containerRef} className="relative w-full h-screen overflow-hidden font-sans bg-[#f8faff]">
@@ -296,11 +321,7 @@ export default function App() {
 
       {/* UI Overlay: Header & Search */}
       <div className="absolute top-4 left-4 md:top-8 md:left-8 z-20 flex flex-col gap-3 md:gap-4 items-start">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="glass-card p-3 md:p-6 rounded-2xl md:rounded-3xl shadow-xl border border-white/40"
-        >
+        <div className="glass-card p-3 md:p-6 rounded-2xl md:rounded-3xl shadow-xl border border-white/40">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg text-white shadow-lg shadow-blue-200">
               <Activity size={18} className="md:w-5 md:h-5" />
@@ -310,54 +331,73 @@ export default function App() {
           <p className="hidden md:block text-sm text-slate-500 leading-relaxed mt-2 max-w-xs">
             基於訊息頻率與關鍵字分析，呈現主播與大哥之間的互動張力。
           </p>
-        </motion.div>
-
-        {/* Expandable Search Bar (Small button style) */}
-        <div className="flex items-center gap-2">
-          <motion.div
-            initial={false}
-            animate={{ 
-              width: isSearchExpanded ? (window.innerWidth < 768 ? 200 : 300) : 44,
-              height: 44,
-              borderRadius: isSearchExpanded ? 16 : 22
-            }}
-            className="glass-card flex items-center overflow-hidden border border-white/40 shadow-lg transition-all bg-white/40 backdrop-blur-md"
-          >
-            <button 
-              onClick={() => {
-                setIsSearchExpanded(!isSearchExpanded);
-                if (!isSearchExpanded) setSearchQuery('');
-              }}
-              className={`min-w-[44px] h-[44px] flex items-center justify-center transition-colors ${isSearchExpanded ? 'text-blue-600' : 'text-slate-600 hover:text-blue-500'}`}
-              title="搜尋用戶"
-            >
-              <Search size={18} />
-            </button>
-            <AnimatePresence>
-              {isSearchExpanded && (
-                <motion.input 
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  type="text"
-                  placeholder="搜尋..."
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 pr-2"
-                />
-              )}
-            </AnimatePresence>
-            {searchQuery && isSearchExpanded && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="pr-3 text-slate-400 hover:text-slate-600"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </motion.div>
         </div>
+
+        {/* Search Bar (Now always visible for better accessibility) */}
+        <div className="glass-card w-64 md:w-80 h-12 rounded-2xl flex items-center overflow-hidden border border-white/40 shadow-lg bg-white/60 backdrop-blur-md">
+          <div className="min-w-[44px] h-full flex items-center justify-center text-slate-500">
+            <Search size={18} />
+          </div>
+          <input 
+            type="text"
+            placeholder="搜尋用戶或主播..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 pr-2"
+          />
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="pr-3 text-slate-400 hover:text-slate-600"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Search Results Summary */}
+        <AnimatePresence>
+          {searchQuery && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="glass-card p-4 rounded-2xl max-w-[280px] md:max-w-sm border border-white/40 shadow-xl bg-white/80 backdrop-blur-lg"
+            >
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">關係簡述</h3>
+              <div className="flex flex-col gap-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                {NODES.filter(n => n.id.toLowerCase().includes(searchQuery.toLowerCase())).map(user => {
+                  const connections = LINKS.filter(l => 
+                    (typeof l.source === 'string' ? l.source : (l.source as any).id) === user.id ||
+                    (typeof l.target === 'string' ? l.target : (l.target as any).id) === user.id
+                  );
+                  
+                  if (connections.length === 0) return null;
+
+                  return (
+                    <div key={user.id} className="border-l-2 border-blue-500 pl-3 py-1">
+                      <p className="text-sm font-bold text-slate-800">{user.id}</p>
+                      <div className="mt-1 space-y-2">
+                        {connections.map((l, idx) => {
+                          const streamerId = (typeof l.source === 'string' ? l.source : (l.source as any).id) === user.id ? 
+                            (typeof l.target === 'string' ? l.target : (l.target as any).id) : 
+                            (typeof l.source === 'string' ? l.source : (l.source as any).id);
+                          
+                          return (
+                            <div key={idx} className="text-[11px] text-slate-500 leading-tight">
+                              與 <span className="text-blue-600 font-bold">{streamerId}</span>：
+                              {l.intensity > 0.8 ? '高度依賴與強烈互動' : l.intensity > 0.5 ? '穩定的支持與共感' : '較為冷淡或單向互動'}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* UI Overlay: Legend */}
