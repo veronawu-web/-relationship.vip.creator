@@ -6,7 +6,7 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    // 開發環境使用 '/'，部署到 GitHub Pages 時再改為 './' 或 '/REPO_NAME/'
+    // 部署到 GitHub Pages 的路徑：https://veronawu-web.github.io/-relationship.vip.creator/
     base: '/-relationship.vip.creator/', 
     plugins: [react(), tailwindcss()],
     define: {
