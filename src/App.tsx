@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand } from 'lucide-react';
+import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand, ZoomIn, ZoomOut } from 'lucide-react';
 import { NODES, LINKS } from './constants';
 import { Node, Link } from './types';
 
@@ -110,16 +110,22 @@ export default function App() {
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.05, 5])
       .filter((event) => {
-        // Prevent zoom when clicking on nodes or links
         return !event.button && event.type !== 'dblclick';
+      })
+      .on('start', () => {
+        svg.style('cursor', 'grabbing');
       })
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
+      })
+      .on('end', () => {
+        svg.style('cursor', 'grab');
       });
 
     zoomRef.current = zoom;
     svg.call(zoom)
-      .on('dblclick.zoom', null); // Disable double click zoom for stability
+      .on('dblclick.zoom', null)
+      .style('cursor', 'grab');
 
     svg.on('click', () => setSelectedNode(null)); // Click background to deselect
 
@@ -132,10 +138,12 @@ export default function App() {
     });
 
     const simulation = d3.forceSimulation<Node>(NODES)
-      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(100))
-      .force('charge', d3.forceManyBody().strength(-800))
+      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(80))
+      .force('charge', d3.forceManyBody().strength(-600))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(80))
+      .force('x', d3.forceX(width / 2).strength(0.1))
+      .force('y', d3.forceY(height / 2).strength(0.1))
+      .force('collision', d3.forceCollide().radius(70))
       .stop();
 
     // Run simulation for a few ticks to get stable positions, then fix them
@@ -515,8 +523,7 @@ export default function App() {
             className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
             title="放大"
           >
-            <Search size={18} className="text-blue-500" />
-            <span className="absolute text-[10px] font-bold mt-0.5">+</span>
+            <ZoomIn size={18} className="text-blue-500" />
           </motion.button>
           
           <motion.button
@@ -526,8 +533,7 @@ export default function App() {
             className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
             title="縮小"
           >
-            <Search size={18} className="text-blue-500" />
-            <span className="absolute text-[10px] font-bold mt-0.5">-</span>
+            <ZoomOut size={18} className="text-blue-500" />
           </motion.button>
 
           <motion.button
