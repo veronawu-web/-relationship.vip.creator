@@ -143,7 +143,7 @@ export default function App() {
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force('x', d3.forceX(width / 2).strength(0.1))
       .force('y', d3.forceY(height / 2).strength(0.1))
-      .force('collision', d3.forceCollide().radius(70))
+      .force('collision', d3.forceCollide().radius(100))
       .stop();
 
     // Run simulation for a few ticks to get stable positions, then fix them
@@ -174,7 +174,8 @@ export default function App() {
     filter.append('feComposite').attr('in', 'SourceGraphic').attr('in2', 'blur').attr('operator', 'over');
 
     const linkGroup = g.append('g').attr('class', 'links-layer');
-    const nodeGroupLayer = g.append('g').attr('class', 'nodes-layer'); // Explicit nodes layer on top
+    const nodeGroupLayer = g.append('g').attr('class', 'nodes-layer'); 
+    const labelsGroupLayer = g.append('g').attr('class', 'labels-layer'); // New layer for labels to stay on top
     
     const link = linkGroup.selectAll('line')
       .data(LINKS)
@@ -276,10 +277,28 @@ export default function App() {
         return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg></div>`;
       });
 
+    const label = labelsGroupLayer.selectAll('g')
+      .data(NODES)
+      .enter().append('g')
+      .attr('class', 'label-group')
+      .style('pointer-events', 'none');
+
+    label.append('text')
+      .text(d => d.id)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#1e293b')
+      .attr('stroke', 'white')
+      .attr('stroke-width', 3)
+      .attr('paint-order', 'stroke')
+      .style('font-size', '12px')
+      .style('font-weight', '700')
+      .style('pointer-events', 'none');
+
     // Set initial positions
     link.attr('x1', (d: any) => d.source.x).attr('y1', (d: any) => d.source.y).attr('x2', (d: any) => d.target.x).attr('y2', (d: any) => d.target.y);
     linkHitArea.attr('x1', (d: any) => d.source.x).attr('y1', (d: any) => d.source.y).attr('x2', (d: any) => d.target.x).attr('y2', (d: any) => d.target.y);
     node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+    label.attr('transform', (d: any) => `translate(${d.x},${d.y + 55 + (d.val / 2)})`);
 
     // Initial fit to screen
     setTimeout(() => {
@@ -330,10 +349,12 @@ export default function App() {
     if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
     const node = svg.selectAll('.node-group');
+    const label = svg.selectAll('.label-group');
     const link = svg.selectAll('.links-layer line:not(.hit-area)');
 
     if (!searchQuery) {
       node.style('opacity', 1).style('pointer-events', 'all');
+      label.style('opacity', 1);
       link.style('opacity', (d: any) => 0.2 + d.intensity * 0.5);
       return;
     }
@@ -358,6 +379,8 @@ export default function App() {
 
     node.style('opacity', d => allVisibleIds.has((d as any).id) ? 1 : 0.05)
         .style('pointer-events', d => allVisibleIds.has((d as any).id) ? 'all' : 'none');
+    
+    label.style('opacity', d => allVisibleIds.has((d as any).id) ? 1 : 0.05);
         
     link.style('opacity', (d: any) => {
       const sId = typeof d.source === 'string' ? d.source : d.source.id;
