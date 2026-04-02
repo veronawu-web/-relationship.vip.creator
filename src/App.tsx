@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Download, Camera, Search, X } from 'lucide-react';
-import { toPng } from 'html-to-image';
+import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X } from 'lucide-react';
 import { NODES, LINKS } from './constants';
 import { Node, Link } from './types';
 
@@ -11,8 +10,8 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
   const filteredNodes = useMemo(() => {
     if (!searchQuery) return NODES;
@@ -22,7 +21,7 @@ export default function App() {
   }, [searchQuery]);
 
   const fitToScreen = useCallback(() => {
-    if (!svgRef.current) return;
+    if (!svgRef.current || !zoomRef.current) return;
     const svg = d3.select(svgRef.current);
     const g = svg.select('.main-container');
     const bounds = (g.node() as SVGGElement)?.getBBox();
@@ -35,46 +34,15 @@ export default function App() {
       const midX = bounds.x + width / 2;
       const midY = bounds.y + height / 2;
       
-      const scale = 0.85 / Math.max(width / fullWidth, height / fullHeight);
+      const scale = 0.8 / Math.max(width / fullWidth, height / fullHeight);
       const translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
       
-      const zoom = d3.zoom<SVGSVGElement, unknown>().on('zoom', (event) => {
-        g.attr('transform', event.transform);
-      });
-
       svg.transition().duration(750).call(
-        zoom.transform,
+        zoomRef.current.transform,
         d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
       );
     }
   }, []);
-
-  const exportImage = useCallback(() => {
-    if (containerRef.current === null) return;
-    
-    setIsExporting(true);
-    fitToScreen();
-    
-    setTimeout(() => {
-      toPng(containerRef.current!, { 
-        cacheBust: true,
-        backgroundColor: '#f8faff',
-        pixelRatio: 2,
-        style: { borderRadius: '0' }
-      })
-        .then((dataUrl) => {
-          const link = document.createElement('a');
-          link.download = `情感熱點報告-${new Date().toLocaleDateString()}.png`;
-          link.href = dataUrl;
-          link.click();
-          setIsExporting(false);
-        })
-        .catch((err) => {
-          console.error('Export failed:', err);
-          setIsExporting(false);
-        });
-    }, 800);
-  }, [containerRef, fitToScreen]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -96,13 +64,14 @@ export default function App() {
         g.attr('transform', event.transform);
       });
 
+    zoomRef.current = zoom;
     svg.call(zoom);
 
     const simulation = d3.forceSimulation<Node>(NODES)
-      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(220))
-      .force('charge', d3.forceManyBody().strength(-2000))
+      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(140))
+      .force('charge', d3.forceManyBody().strength(-800))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(100));
+      .force('collision', d3.forceCollide().radius(80));
 
     const updateDimensions = () => {
       const w = window.innerWidth;
@@ -125,14 +94,35 @@ export default function App() {
     filter.append('feGaussianBlur').attr('stdDeviation', '4').attr('result', 'blur');
     filter.append('feComposite').attr('in', 'SourceGraphic').attr('in2', 'blur').attr('operator', 'over');
 
-    const link = g.append('g')
-      .selectAll('line')
+    const linkGroup = g.append('g').attr('class', 'links-layer');
+    
+    const link = linkGroup.selectAll('line')
       .data(LINKS)
       .enter().append('line')
       .attr('stroke', 'url(#link-gradient)')
       .attr('stroke-opacity', d => 0.2 + d.intensity * 0.5)
       .attr('stroke-width', d => 2 + d.intensity * 6)
-      .attr('stroke-linecap', 'round');
+      .attr('stroke-linecap', 'round')
+      .style('pointer-events', 'none');
+
+    // Add invisible wider lines for better interaction
+    const linkHitArea = linkGroup.selectAll('line.hit-area')
+      .data(LINKS)
+      .enter().append('line')
+      .attr('class', 'hit-area')
+      .attr('stroke', 'transparent')
+      .attr('stroke-width', 20)
+      .style('cursor', 'pointer')
+      .on('mouseover', (event, d) => {
+        d3.select(event.currentTarget.previousSibling).transition().duration(200)
+          .attr('stroke-opacity', 1)
+          .attr('stroke-width', (d: any) => 4 + d.intensity * 10);
+      })
+      .on('mouseout', (event, d) => {
+        d3.select(event.currentTarget.previousSibling).transition().duration(200)
+          .attr('stroke-opacity', (d: any) => 0.2 + d.intensity * 0.5)
+          .attr('stroke-width', (d: any) => 2 + d.intensity * 6);
+      });
 
     const node = g.append('g')
       .selectAll('g')
@@ -201,6 +191,12 @@ export default function App() {
 
     simulation.on('tick', () => {
       link
+        .attr('x1', (d: any) => d.source.x)
+        .attr('y1', (d: any) => d.source.y)
+        .attr('x2', (d: any) => d.target.x)
+        .attr('y2', (d: any) => d.target.y);
+
+      linkHitArea
         .attr('x1', (d: any) => d.source.x)
         .attr('y1', (d: any) => d.source.y)
         .attr('x2', (d: any) => d.target.x)
@@ -352,21 +348,6 @@ export default function App() {
           >
             <Zap size={18} className="text-purple-500 group-hover:scale-110 transition-transform" />
             <span className="hidden md:inline">自動對齊</span>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={exportImage}
-            disabled={isExporting}
-            className="glass-card p-4 rounded-2xl flex items-center gap-3 text-slate-700 font-bold text-sm hover:bg-white/60 transition-all group border border-white/40 shadow-lg"
-          >
-            {isExporting ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
-            ) : (
-              <Camera size={18} className="text-blue-500 group-hover:rotate-12 transition-transform" />
-            )}
-            {isExporting ? '正在生成報告...' : '一鍵導出熱點報告'}
           </motion.button>
         </div>
 
