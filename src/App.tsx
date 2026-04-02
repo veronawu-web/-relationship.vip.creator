@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X } from 'lucide-react';
+import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand } from 'lucide-react';
 import { NODES, LINKS } from './constants';
 import { Node, Link } from './types';
 
@@ -9,18 +9,45 @@ export default function App() {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isLegendExpanded, setIsLegendExpanded] = useState(false);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
-  const filteredNodes = useMemo(() => {
-    if (!searchQuery) return NODES;
-    return NODES.filter(node => 
-      node.id.toLowerCase().includes(searchQuery.toLowerCase())
+  const zoomToNodes = useCallback((nodeIds: Set<string>) => {
+    if (!svgRef.current || !zoomRef.current || nodeIds.size === 0) return;
+    const svg = d3.select(svgRef.current);
+    const g = svg.select('.main-container');
+    
+    const matchedNodes = NODES.filter(n => nodeIds.has(n.id));
+    if (matchedNodes.length === 0) return;
+
+    const padding = 100;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    matchedNodes.forEach(n => {
+      minX = Math.min(minX, (n as any).x - 50);
+      minY = Math.min(minY, (n as any).y - 50);
+      maxX = Math.max(maxX, (n as any).x + 50);
+      maxY = Math.max(maxY, (n as any).y + 50);
+    });
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const midX = minX + width / 2;
+    const midY = minY + height / 2;
+    
+    const fullWidth = window.innerWidth;
+    const fullHeight = window.innerHeight;
+    
+    const scale = Math.min(2, 0.7 / Math.max(width / fullWidth, height / fullHeight));
+    const translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
+    
+    svg.transition().duration(1000).ease(d3.easeCubicInOut).call(
+      zoomRef.current.transform,
+      d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
     );
-  }, [searchQuery]);
+  }, []);
 
   const fitToScreen = useCallback(() => {
     if (!svgRef.current || !zoomRef.current) return;
@@ -45,6 +72,26 @@ export default function App() {
       );
     }
   }, []);
+
+  const handleZoom = useCallback((direction: 'in' | 'out' | 'reset') => {
+    if (!svgRef.current || !zoomRef.current) return;
+    const svg = d3.select(svgRef.current);
+    
+    if (direction === 'reset') {
+      fitToScreen();
+      return;
+    }
+
+    const factor = direction === 'in' ? 1.5 : 0.6;
+    svg.transition().duration(300).call(zoomRef.current.scaleBy, factor);
+  }, [fitToScreen]);
+
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery) return NODES;
+    return NODES.filter(node => 
+      node.id.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -85,10 +132,10 @@ export default function App() {
     });
 
     const simulation = d3.forceSimulation<Node>(NODES)
-      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(200))
-      .force('charge', d3.forceManyBody().strength(-2000))
+      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(100))
+      .force('charge', d3.forceManyBody().strength(-800))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(100))
+      .force('collision', d3.forceCollide().radius(80))
       .stop();
 
     // Run simulation for a few ticks to get stable positions, then fix them
@@ -159,10 +206,8 @@ export default function App() {
         setSelectedNode(d);
       })
       .on('mouseover', (event, d) => {
-        setHoveredNode(d);
-        d3.select(event.currentTarget).raise(); // Bring hovered node to front within its layer
+        d3.select(event.currentTarget).raise();
       })
-      .on('mouseout', () => setHoveredNode(null))
       .call(d3.drag<SVGGElement, Node>()
         .on('start', dragstarted)
         .on('drag', dragged)
@@ -299,6 +344,10 @@ export default function App() {
 
     const allVisibleIds = new Set([...matchedIds, ...connectedStreamerIds]);
 
+    if (searchQuery && matchedIds.size > 0) {
+      zoomToNodes(allVisibleIds);
+    }
+
     node.style('opacity', d => allVisibleIds.has((d as any).id) ? 1 : 0.05)
         .style('pointer-events', d => allVisibleIds.has((d as any).id) ? 'all' : 'none');
         
@@ -384,9 +433,19 @@ export default function App() {
                             (typeof l.source === 'string' ? l.source : (l.source as any).id);
                           
                           return (
-                            <div key={idx} className="text-[11px] text-slate-500 leading-tight">
-                              與 <span className="text-blue-600 font-bold">{streamerId}</span>：
-                              {l.intensity > 0.8 ? '高度依賴與強烈互動' : l.intensity > 0.5 ? '穩定的支持與共感' : '較為冷淡或單向互動'}
+                            <div key={idx} className="bg-slate-50/80 p-2 rounded-xl border border-slate-100">
+                              <div className="text-[11px] text-slate-500 leading-tight mb-2">
+                                與 <span className="text-blue-600 font-bold">{streamerId}</span>：
+                                {l.intensity > 0.8 ? '高度依賴與強烈互動' : l.intensity > 0.5 ? '穩定的支持與共感' : '較為冷淡或單向互動'}
+                              </div>
+                              <div className="pl-2 border-l border-slate-200 space-y-1.5">
+                                <div className="text-[10px] text-slate-400 italic">
+                                  "精選對話：{l.intensity > 0.7 ? '你是我最信任的人，沒有你我不知道該怎麼辦...' : '謝謝你的支持，我會繼續努力的。'}"
+                                </div>
+                                <div className="text-[9px] font-bold text-blue-500/70 uppercase tracking-tighter">
+                                  摘要：{l.intensity > 0.8 ? '情感深度連結，存在強烈的情緒依賴與排他性。' : '關係穩定，雙方在互動中獲得正向情緒價值。'}
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -448,26 +507,43 @@ export default function App() {
 
       {/* UI Overlay: View Controls */}
       <div className="absolute top-4 right-4 md:top-8 md:right-8 z-30 flex flex-col gap-3 md:gap-4 items-end">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={fitToScreen}
-          className="glass-card w-11 h-11 md:w-auto md:h-auto md:p-4 rounded-full md:rounded-2xl flex items-center justify-center md:gap-3 text-slate-700 font-bold text-sm hover:bg-white/60 transition-all group border border-white/40 shadow-lg bg-white/40 backdrop-blur-md"
-          title="自動對齊"
-        >
-          <Zap size={18} className="text-purple-500 group-hover:scale-110 transition-transform" />
-          <span className="hidden md:inline">自動對齊</span>
-        </motion.button>
+        <div className="flex flex-col gap-2">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => handleZoom('in')}
+            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+            title="放大"
+          >
+            <Search size={18} className="text-blue-500" />
+            <span className="absolute text-[10px] font-bold mt-0.5">+</span>
+          </motion.button>
+          
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => handleZoom('out')}
+            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+            title="縮小"
+          >
+            <Search size={18} className="text-blue-500" />
+            <span className="absolute text-[10px] font-bold mt-0.5">-</span>
+          </motion.button>
 
-        <div className="glass-card p-2 md:p-3 rounded-xl text-[9px] md:text-[10px] text-slate-400 font-bold uppercase tracking-wider border border-white/40 flex items-center gap-2 bg-white/40 backdrop-blur-md">
-          <Info size={12} className="text-slate-400" />
-          <span className="hidden md:inline">滾輪縮放 / 拖拽移動 / 點擊查看詳情</span>
-          <span className="md:hidden">手勢操作 / 點擊詳情</span>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={fitToScreen}
+            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+            title="移動至視圖中心"
+          >
+            <Hand size={18} className="text-purple-500" />
+          </motion.button>
         </div>
 
         {/* UI Overlay: Detail Panel */}
         <AnimatePresence>
-          {(selectedNode || hoveredNode) && (
+          {selectedNode && (
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -477,14 +553,14 @@ export default function App() {
               <div className="glass-card p-6 rounded-3xl overflow-hidden relative border border-white/60 shadow-2xl">
                 {/* Decorative Glow */}
                 <div className={`absolute top-0 right-0 w-24 h-24 blur-3xl opacity-20 ${
-                  (selectedNode || hoveredNode)?.group === 'high' ? 'bg-pink-500' : 
-                  (selectedNode || hoveredNode)?.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
+                  selectedNode.group === 'high' ? 'bg-pink-500' : 
+                  selectedNode.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
                 }`} />
 
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                      {(selectedNode || hoveredNode)?.group} Intensity
+                      {selectedNode.group} Intensity
                     </span>
                     <div className="p-1.5 bg-slate-100 rounded-full">
                       <User size={14} className="text-slate-500" />
@@ -492,33 +568,33 @@ export default function App() {
                   </div>
 
                   <h2 className="text-2xl font-bold text-slate-800 mb-1">
-                    {(selectedNode || hoveredNode)?.id}
+                    {selectedNode.id}
                   </h2>
                   
                   <div className="flex items-center gap-2 mb-6">
                     <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
                       <motion.div 
                         initial={{ width: 0 }}
-                        animate={{ width: `${(selectedNode || hoveredNode)?.val || 0}%` }}
+                        animate={{ width: `${selectedNode.val || 0}%` }}
                         className={`h-full ${
-                          (selectedNode || hoveredNode)?.group === 'high' ? 'bg-pink-500' : 
-                          (selectedNode || hoveredNode)?.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
+                          selectedNode.group === 'high' ? 'bg-pink-500' : 
+                          selectedNode.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
                         }`}
                       />
                     </div>
                     <span className="text-xs font-bold text-slate-400">
-                      {(selectedNode || hoveredNode)?.val}%
+                      {selectedNode.val}%
                     </span>
                   </div>
 
-                  {(selectedNode || hoveredNode)?.lastMessage && (
+                  {selectedNode.lastMessage && (
                     <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner">
                       <div className="flex items-center gap-2 mb-2 text-slate-400">
                         <MessageCircle size={14} />
                         <span className="text-[10px] font-bold uppercase">核心語錄</span>
                       </div>
                       <p className="text-sm text-slate-600 italic leading-relaxed">
-                        "{(selectedNode || hoveredNode)?.lastMessage}"
+                        "{selectedNode.lastMessage}"
                       </p>
                     </div>
                   )}
