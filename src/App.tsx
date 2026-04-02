@@ -11,6 +11,8 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isLegendExpanded, setIsLegendExpanded] = useState(false);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
   const filteredNodes = useMemo(() => {
@@ -102,6 +104,7 @@ export default function App() {
     filter.append('feComposite').attr('in', 'SourceGraphic').attr('in2', 'blur').attr('operator', 'over');
 
     const linkGroup = g.append('g').attr('class', 'links-layer');
+    const nodeGroupLayer = g.append('g').attr('class', 'nodes-layer'); // Explicit nodes layer on top
     
     const link = linkGroup.selectAll('line')
       .data(LINKS)
@@ -118,7 +121,7 @@ export default function App() {
       .enter().append('line')
       .attr('class', 'hit-area')
       .attr('stroke', 'transparent')
-      .attr('stroke-width', 20)
+      .attr('stroke-width', 6) // Further reduced to prevent blocking nodes
       .style('cursor', 'pointer')
       .on('mouseover', (event, d) => {
         d3.select(event.currentTarget.previousSibling).transition().duration(200)
@@ -131,8 +134,7 @@ export default function App() {
           .attr('stroke-width', (d: any) => 2 + d.intensity * 6);
       });
 
-    const node = g.append('g')
-      .selectAll('g')
+    const node = nodeGroupLayer.selectAll('g')
       .data(NODES)
       .enter().append('g')
       .attr('class', 'node-group')
@@ -143,7 +145,7 @@ export default function App() {
       })
       .on('mouseover', (event, d) => {
         setHoveredNode(d);
-        d3.select(event.currentTarget).raise(); // Bring hovered node to front
+        d3.select(event.currentTarget).raise(); // Bring hovered node to front within its layer
       })
       .on('mouseout', () => setHoveredNode(null))
       .call(d3.drag<SVGGElement, Node>()
@@ -151,12 +153,7 @@ export default function App() {
         .on('drag', dragged)
         .on('end', dragended) as any);
 
-    // Invisible hit area for node
-    node.append('circle')
-      .attr('r', d => 45 + (d.val / 2))
-      .attr('fill', 'transparent')
-      .style('cursor', 'pointer');
-
+    // Remove extra invisible hit area and make visible circle the primary hit target
     node.append('circle')
       .attr('r', d => 30 + (d.val / 2))
       .attr('fill', d => {
@@ -173,7 +170,8 @@ export default function App() {
       })
       .attr('stroke-width', 1.5)
       .style('filter', 'url(#glow)')
-      .style('pointer-events', 'none');
+      .style('cursor', 'pointer')
+      .style('pointer-events', 'all'); // Enable clicks exactly on the visible circle
 
     // Add a subtle outer ring for "Soft Tech" look
     node.append('circle')
@@ -256,10 +254,10 @@ export default function App() {
         const scale = 0.85 / Math.max(width / fullWidth, height / fullHeight);
         const translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
 
-        svg.transition().duration(750).call(
-          zoom.transform,
-          d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
-        );
+    svg.transition().duration(750).call(
+      zoomRef.current.transform as any,
+      d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+    );
       }
     }, 1000);
 
@@ -297,83 +295,134 @@ export default function App() {
       <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* UI Overlay: Header & Search */}
-      <div className="absolute top-8 left-8 z-20 flex flex-col gap-4">
+      <div className="absolute top-4 left-4 md:top-8 md:left-8 z-20 flex flex-col gap-3 md:gap-4 items-start">
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="glass-card p-6 rounded-3xl max-w-md shadow-xl border border-white/40"
+          className="glass-card p-3 md:p-6 rounded-2xl md:rounded-3xl shadow-xl border border-white/40"
         >
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg text-white shadow-lg shadow-blue-200">
-              <Activity size={20} />
+              <Activity size={18} className="md:w-5 md:h-5" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">情感線熱點圖</h1>
+            <h1 className="text-base md:text-xl font-bold tracking-tight text-slate-800">情感線熱點圖</h1>
           </div>
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <p className="hidden md:block text-sm text-slate-500 leading-relaxed mt-2 max-w-xs">
             基於訊息頻率與關鍵字分析，呈現主播與大哥之間的互動張力。
           </p>
         </motion.div>
 
-        {/* Search Bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="relative group"
-        >
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-            <Search size={18} />
-          </div>
-          <input 
-            type="text"
-            placeholder="搜尋 User name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="glass-card w-80 pl-12 pr-10 py-3.5 rounded-2xl text-sm font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 border border-white/40 shadow-lg transition-all"
-          />
-          {searchQuery && (
+        {/* Expandable Search Bar (Small button style) */}
+        <div className="flex items-center gap-2">
+          <motion.div
+            initial={false}
+            animate={{ 
+              width: isSearchExpanded ? (window.innerWidth < 768 ? 200 : 300) : 44,
+              height: 44,
+              borderRadius: isSearchExpanded ? 16 : 22
+            }}
+            className="glass-card flex items-center overflow-hidden border border-white/40 shadow-lg transition-all bg-white/40 backdrop-blur-md"
+          >
             <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              onClick={() => {
+                setIsSearchExpanded(!isSearchExpanded);
+                if (!isSearchExpanded) setSearchQuery('');
+              }}
+              className={`min-w-[44px] h-[44px] flex items-center justify-center transition-colors ${isSearchExpanded ? 'text-blue-600' : 'text-slate-600 hover:text-blue-500'}`}
+              title="搜尋用戶"
             >
-              <X size={16} />
+              <Search size={18} />
             </button>
-          )}
-        </motion.div>
+            <AnimatePresence>
+              {isSearchExpanded && (
+                <motion.input 
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  type="text"
+                  placeholder="搜尋..."
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 pr-2"
+                />
+              )}
+            </AnimatePresence>
+            {searchQuery && isSearchExpanded && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="pr-3 text-slate-400 hover:text-slate-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </motion.div>
+        </div>
       </div>
 
       {/* UI Overlay: Legend */}
-      <div className="absolute bottom-8 left-8 z-10">
-        <div className="glass-card p-4 rounded-2xl flex flex-col gap-3 border border-white/40 shadow-lg">
-          <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-[#FF375F] shadow-[0_0_8px_rgba(255,55,95,0.6)]" /> 高強度 (焦慮/依賴)
-          </div>
-          <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-[#BF5AF2] shadow-[0_0_8px_rgba(191,90,242,0.6)]" /> 支持型 (穩定/共感)
-          </div>
-          <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-[#007AFF] shadow-[0_0_8px_rgba(0,122,255,0.6)]" /> 冷靜型 (單向/失落)
-          </div>
-        </div>
+      <div className="absolute bottom-4 left-4 md:bottom-8 md:left-8 z-10">
+        <motion.div 
+          animate={{ height: isLegendExpanded ? 'auto' : 44 }}
+          className="glass-card p-1.5 md:p-2 rounded-2xl flex flex-col gap-3 border border-white/40 shadow-lg overflow-hidden bg-white/40 backdrop-blur-md"
+        >
+          <button 
+            onClick={() => setIsLegendExpanded(!isLegendExpanded)}
+            className="flex items-center gap-3 h-8 px-2 text-xs font-bold text-slate-600 w-full"
+          >
+            <div className="p-1.5 bg-white/60 rounded-lg shadow-sm">
+              <Zap size={14} className="text-blue-500" />
+            </div>
+            <span className={isLegendExpanded ? "inline" : "hidden md:inline"}>圖例</span>
+            {!isLegendExpanded && (
+              <div className="flex gap-1 ml-auto md:hidden">
+                <div className="w-1.5 h-1.5 rounded-full bg-[#FF375F]" />
+                <div className="w-1.5 h-1.5 rounded-full bg-[#BF5AF2]" />
+                <div className="w-1.5 h-1.5 rounded-full bg-[#007AFF]" />
+              </div>
+            )}
+          </button>
+          
+          <AnimatePresence>
+            {isLegendExpanded && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col gap-3 px-2 pb-2 min-w-[160px]"
+              >
+                <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#FF375F] shadow-[0_0_8px_rgba(255,55,95,0.6)]" /> 高強度 (焦慮/依賴)
+                </div>
+                <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#BF5AF2] shadow-[0_0_8px_rgba(191,90,242,0.6)]" /> 支持型 (穩定/共感)
+                </div>
+                <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#007AFF] shadow-[0_0_8px_rgba(0,122,255,0.6)]" /> 冷靜型 (單向/失落)
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </div>
 
-      {/* UI Overlay: Export & View Controls */}
-      <div className="absolute top-8 right-8 z-30 flex flex-col gap-4 items-end">
-        <div className="flex gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={fitToScreen}
-            className="glass-card p-4 rounded-2xl flex items-center gap-3 text-slate-700 font-bold text-sm hover:bg-white/60 transition-all group border border-white/40 shadow-lg"
-            title="縮放至全螢幕"
-          >
-            <Zap size={18} className="text-purple-500 group-hover:scale-110 transition-transform" />
-            <span className="hidden md:inline">自動對齊</span>
-          </motion.button>
-        </div>
+      {/* UI Overlay: View Controls */}
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-30 flex flex-col gap-3 md:gap-4 items-end">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={fitToScreen}
+          className="glass-card w-11 h-11 md:w-auto md:h-auto md:p-4 rounded-full md:rounded-2xl flex items-center justify-center md:gap-3 text-slate-700 font-bold text-sm hover:bg-white/60 transition-all group border border-white/40 shadow-lg bg-white/40 backdrop-blur-md"
+          title="自動對齊"
+        >
+          <Zap size={18} className="text-purple-500 group-hover:scale-110 transition-transform" />
+          <span className="hidden md:inline">自動對齊</span>
+        </motion.button>
 
-        <div className="glass-card p-3 rounded-xl text-[10px] text-slate-400 font-bold uppercase tracking-wider border border-white/40">
-          滾輪縮放 / 拖拽移動 / 點擊查看詳情
+        <div className="glass-card p-2 md:p-3 rounded-xl text-[9px] md:text-[10px] text-slate-400 font-bold uppercase tracking-wider border border-white/40 flex items-center gap-2 bg-white/40 backdrop-blur-md">
+          <Info size={12} className="text-slate-400" />
+          <span className="hidden md:inline">滾輪縮放 / 拖拽移動 / 點擊查看詳情</span>
+          <span className="md:hidden">手勢操作 / 點擊詳情</span>
         </div>
 
         {/* UI Overlay: Detail Panel */}
