@@ -141,7 +141,10 @@ export default function App() {
         event.stopPropagation();
         setSelectedNode(d);
       })
-      .on('mouseover', (event, d) => setHoveredNode(d))
+      .on('mouseover', (event, d) => {
+        setHoveredNode(d);
+        d3.select(event.currentTarget).raise(); // Bring hovered node to front
+      })
       .on('mouseout', () => setHoveredNode(null))
       .call(d3.drag<SVGGElement, Node>()
         .on('start', dragstarted)
@@ -200,10 +203,11 @@ export default function App() {
       .attr('y', -12)
       .attr('width', 24)
       .attr('height', 24)
+      .style('pointer-events', 'none') // Ensure clicks pass through to the node hit area
       .html(d => {
         const color = d.group === 'high' ? '#FF375F' : d.group === 'support' ? '#BF5AF2' : '#007AFF';
-        if (d.group === 'core') return `<div style="color: ${color}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div>`;
-        return `<div style="color: ${color}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg></div>`;
+        if (d.group === 'core') return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div>`;
+        return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg></div>`;
       });
 
     simulation.on('tick', () => {
@@ -444,8 +448,8 @@ export default function App() {
       </div>
 
       {/* Floating Decorative Objects */}
-      <div className="absolute top-1/4 right-1/4 w-4 h-4 bg-white rounded-full blur-sm animate-float opacity-40" />
-      <div className="absolute bottom-1/3 left-1/5 w-6 h-6 bg-blue-200 rounded-full blur-md animate-float opacity-30" style={{ animationDelay: '2s' }} />
+      <div className="absolute top-1/4 right-1/4 w-4 h-4 bg-white rounded-full blur-sm animate-float opacity-40 pointer-events-none" />
+      <div className="absolute bottom-1/3 left-1/5 w-6 h-6 bg-blue-200 rounded-full blur-md animate-float opacity-30 pointer-events-none" style={{ animationDelay: '2s' }} />
     </div>
   );
 }
