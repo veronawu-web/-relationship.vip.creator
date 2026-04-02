@@ -59,13 +59,20 @@ export default function App() {
     const g = svg.append('g').attr('class', 'main-container');
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
+      .scaleExtent([0.05, 5])
+      .filter((event) => {
+        // Prevent zoom when clicking on nodes or links
+        return !event.button && event.type !== 'dblclick';
+      })
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
       });
 
     zoomRef.current = zoom;
-    svg.call(zoom);
+    svg.call(zoom)
+      .on('dblclick.zoom', null); // Disable double click zoom for stability
+
+    svg.on('click', () => setSelectedNode(null)); // Click background to deselect
 
     const simulation = d3.forceSimulation<Node>(NODES)
       .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(140))
@@ -129,13 +136,23 @@ export default function App() {
       .data(NODES)
       .enter().append('g')
       .attr('class', 'node-group')
-      .on('click', (event, d) => setSelectedNode(d))
+      .style('cursor', 'pointer')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        setSelectedNode(d);
+      })
       .on('mouseover', (event, d) => setHoveredNode(d))
       .on('mouseout', () => setHoveredNode(null))
       .call(d3.drag<SVGGElement, Node>()
         .on('start', dragstarted)
         .on('drag', dragged)
         .on('end', dragended) as any);
+
+    // Invisible hit area for node
+    node.append('circle')
+      .attr('r', d => 45 + (d.val / 2))
+      .attr('fill', 'transparent')
+      .style('cursor', 'pointer');
 
     node.append('circle')
       .attr('r', d => 30 + (d.val / 2))
@@ -153,7 +170,7 @@ export default function App() {
       })
       .attr('stroke-width', 1.5)
       .style('filter', 'url(#glow)')
-      .style('cursor', 'pointer');
+      .style('pointer-events', 'none');
 
     // Add a subtle outer ring for "Soft Tech" look
     node.append('circle')
