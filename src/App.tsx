@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand, ZoomIn, ZoomOut, MessageSquare, Flame, Thermometer } from 'lucide-react';
+import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand, ZoomIn, ZoomOut, MessageSquare, Flame, Thermometer, Trophy, Crown, Sword } from 'lucide-react';
 import { NODES, LINKS } from './constants';
 import { Node, Link } from './types';
 
@@ -111,7 +111,7 @@ export default function App() {
   }, [searchQuery]);
 
   const entanglementData = useMemo(() => {
-    const keywords = ['封鎖', '吵架', '難過', '失望', '壓力', '控制', '放棄', '生氣', '不爽', '冷暴力', '止損', '偏執', '痛苦', '排擠', '禁言', '跨不出去', '煎熬', '走心', '遺忘', '欺負', '對不起', '沒辦法', '結束', '拒絕', '累', '不想見面'];
+    const keywords = ['封鎖', '吵架', '難過', '失望', '壓力', '控制', '放棄', '生氣', '不爽', '冷暴力', '止損', '偏執', '痛苦', '排擠', '禁言', '跨不出去', '煎熬', '走心', '遺忘', '欺負', '對不起', '沒辦法', '結束', '拒絕', '累', '不想見面', '討拍', '委屈', '哭'];
     const excludeKeywords = ['愛你', '想你', '啾咪', '嘻嘻', '麼麼', '寶貝', '甜蜜', '專屬', '寵', '羞', '❤️', '😻', '💋', '夢到我'];
     
     return LINKS.filter(link => {
@@ -120,13 +120,15 @@ export default function App() {
         link.lastMessage || ''
       ];
       
-      // Check if any message contains a conflict keyword
+      // Check if any message contains a conflict or sympathy keyword
       const hasConflict = allMsgs.some(msg => keywords.some(k => msg.includes(k)));
       
       return hasConflict;
     }).map(link => {
-      const sourceNode = NODES.find(n => n.id === (typeof link.source === 'string' ? link.source : (link.source as any).id));
-      const targetNode = NODES.find(n => n.id === (typeof link.target === 'string' ? link.target : (link.target as any).id));
+      const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
+      const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+      const sourceNode = NODES.find(n => n.id === sourceId);
+      const targetNode = NODES.find(n => n.id === targetId);
       
       // Filter the messages shown in entanglement to exclude purely coquettish ones
       const filteredStreamerMessages = (link.streamerMessages || []).filter(msg => {
@@ -134,9 +136,40 @@ export default function App() {
         return !isCoquettish;
       });
 
-      return { ...link, sourceNode, targetNode, filteredStreamerMessages };
-    });
+      // Calculate Combat Power for this specific entanglement
+      // Lower sentiment (more conflict) + Higher intensity = Higher Combat Power
+      const combatPower = Math.round((100 - (link.sentimentScore || 50)) * (link.intensity || 0.5) * 2 + (filteredStreamerMessages.length * 10));
+
+      return { ...link, sourceNode, targetNode, filteredStreamerMessages, combatPower };
+    }).sort((a, b) => b.combatPower - a.combatPower);
   }, []);
+
+  const combatLeaderboard = useMemo(() => {
+    const scores: Record<string, { id: string, score: number, type: 'user' | 'streamer', reason: string }> = {};
+    
+    entanglementData.forEach(item => {
+      const sId = item.sourceNode?.id || '';
+      const tId = item.targetNode?.id || '';
+      
+      if (sId) {
+        if (!scores[sId]) scores[sId] = { id: sId, score: 0, type: 'user', reason: '' };
+        scores[sId].score += item.combatPower;
+        if (sId === 'jmarx5168' && item.targetNode?.id === 'neinei_chen') {
+          scores[sId].reason = '內內不理我 (討拍中心)';
+        }
+      }
+      
+      if (tId) {
+        if (!scores[tId]) scores[tId] = { id: tId, score: 0, type: 'streamer', reason: '' };
+        scores[tId].score += item.combatPower;
+        if (tId === 'chinchin1010') {
+          scores[tId].reason = '金金放下了 (討拍中心)';
+        }
+      }
+    });
+
+    return Object.values(scores).sort((a, b) => b.score - a.score).slice(0, 5);
+  }, [entanglementData]);
 
   const streamerDialogues = useMemo(() => {
     return LINKS.filter(link => link.streamerMessages && link.streamerMessages.length > 0)
@@ -659,96 +692,196 @@ export default function App() {
       {/* Entanglement Tab */}
       {activeTab === 'entanglement' && (
         <div className="relative w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50 z-10">
-          <div className="max-w-4xl mx-auto space-y-8">
-            <div className="flex flex-col items-center mb-12">
-              <div className="w-16 h-16 rounded-3xl bg-red-500 flex items-center justify-center text-white shadow-xl shadow-red-200 mb-4">
-                <Flame size={32} />
-              </div>
-              <h1 className="text-3xl font-bold text-slate-800">情感糾葛錄</h1>
-              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">Emotional Tension & Conflict Records</p>
+          <div className="max-w-6xl mx-auto">
+            <div className="flex flex-col items-center mb-16">
+              <motion.div 
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="w-20 h-20 rounded-[2.5rem] bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white shadow-2xl shadow-red-200 mb-6"
+              >
+                <Flame size={40} />
+              </motion.div>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight">情感糾葛錄</h1>
+              <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px] mt-3">Emotional Tension & Conflict Records</p>
             </div>
 
-            {entanglementData.map((link, idx) => (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: idx * 0.1 }}
-                key={idx} 
-                className="glass-card p-8 rounded-[40px] border border-red-100/50 shadow-2xl bg-white/95 relative overflow-hidden"
-              >
-                {/* Background Accent */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
-                
-                <div className="flex items-center justify-between mb-10 relative z-10">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                      {link.sourceNode?.id.charAt(0).toUpperCase()}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Leaderboard Sidebar */}
+              <div className="lg:col-span-4 space-y-6">
+                <div className="glass-card p-8 rounded-[2.5rem] border border-orange-100/50 shadow-2xl bg-white/90 sticky top-32">
+                  <div className="flex items-center gap-3 mb-8">
+                    <div className="p-2 bg-orange-500 rounded-xl text-white shadow-lg shadow-orange-100">
+                      <Trophy size={20} />
                     </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">用戶</p>
-                      <p className="text-lg font-bold text-slate-800">{link.sourceNode?.id}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-col items-center px-4">
-                    <div className="flex items-center gap-1 text-red-500 mb-1">
-                      <Zap size={14} fill="currentColor" />
-                      <span className="text-xs font-black uppercase tracking-tighter">張力</span>
-                    </div>
-                    <div className="h-px w-24 bg-gradient-to-r from-transparent via-red-200 to-transparent" />
+                    <h2 className="text-xl font-black text-slate-800">糾葛戰力榜</h2>
                   </div>
 
-                  <div className="flex items-center gap-4 text-right">
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">主播</p>
-                      <p className="text-lg font-bold text-slate-800">{link.targetNode?.id}</p>
-                    </div>
-                    <div className="w-14 h-14 rounded-2xl bg-red-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-100">
-                      {link.targetNode?.id.charAt(0).toUpperCase()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-6 relative z-10">
-                  {/* User's Message (The Trigger) */}
-                  {link.lastMessage && (
-                    <div className="flex flex-col items-start max-w-[85%]">
-                      <p className="text-[10px] font-bold text-slate-400 mb-1 ml-4">USER SIDE</p>
-                      <div className="bg-slate-100 p-5 rounded-3xl rounded-tl-none shadow-sm border border-slate-200/50">
-                        <p className="text-sm text-slate-700 font-medium leading-relaxed italic">"{link.lastMessage}"</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Streamer's Responses (The Entanglement) */}
-                  <div className="flex flex-col items-end space-y-3">
-                    <p className="text-[10px] font-bold text-red-400 mb-1 mr-4">STREAMER SIDE</p>
-                    {(link as any).filteredStreamerMessages?.map((msg: string, mIdx: number) => (
+                  <div className="space-y-4">
+                    {combatLeaderboard.map((item, idx) => (
                       <motion.div 
-                        initial={{ opacity: 0, x: 20 }}
+                        initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 + mIdx * 0.1 }}
-                        key={mIdx} 
-                        className="bg-red-50 p-5 rounded-3xl rounded-tr-none border border-red-100/50 max-w-[85%] shadow-sm"
+                        transition={{ delay: idx * 0.1 }}
+                        key={item.id} 
+                        className={`relative p-4 rounded-2xl border transition-all ${
+                          idx === 0 ? 'bg-orange-50 border-orange-200 shadow-lg shadow-orange-50' : 'bg-slate-50/50 border-slate-100 hover:bg-white hover:shadow-md'
+                        }`}
                       >
-                        <p className="text-sm text-red-800 font-bold leading-relaxed">"{msg}"</p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${
+                              idx === 0 ? 'bg-orange-500 text-white' : 
+                              idx === 1 ? 'bg-slate-400 text-white' : 
+                              idx === 2 ? 'bg-orange-300 text-white' : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-black text-slate-800">{item.id}</p>
+                                {idx === 0 && <Crown size={12} className="text-orange-500 fill-orange-500" />}
+                                {item.reason && (
+                                  <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                                    討拍王
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">{item.type === 'streamer' ? '主播' : '用戶'}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-black text-orange-600">{item.score}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">戰力值</p>
+                          </div>
+                        </div>
+                        {item.reason && (
+                          <div className="mt-2 pt-2 border-t border-orange-100/50">
+                            <p className="text-[10px] font-bold text-orange-700 italic">"{item.reason}"</p>
+                          </div>
+                        )}
                       </motion.div>
                     ))}
                   </div>
-                </div>
 
-                {/* Footer Analysis */}
-                <div className="mt-10 pt-6 border-t border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">情緒張力偵測中</span>
-                  </div>
-                  <div className="text-[10px] font-black text-red-500 bg-red-50 px-3 py-1 rounded-full uppercase tracking-widest">
-                    {(link.sentimentScore || 0) < 30 ? '關係冰點' : '高壓互動'}
+                  <div className="mt-8 p-4 bg-slate-900 rounded-2xl text-white">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sword size={14} className="text-orange-400" />
+                      <p className="text-[10px] font-black uppercase tracking-widest">戰力計算公式</p>
+                    </div>
+                    <p className="text-[9px] text-slate-400 leading-relaxed">
+                      戰力 = (100 - 情感溫度) × 互動強度 × 2 + (糾葛對話數 × 10)
+                    </p>
                   </div>
                 </div>
-              </motion.div>
-            ))}
+              </div>
+
+              {/* Main Entanglement Feed */}
+              <div className="lg:col-span-8 space-y-8">
+                {entanglementData.map((link, idx) => (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    key={idx} 
+                    className="glass-card p-8 md:p-10 rounded-[3rem] border border-red-100/50 shadow-2xl bg-white/95 relative overflow-hidden group hover:shadow-red-100/50 transition-all duration-500"
+                  >
+                    {/* Background Accent */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-red-500/10 transition-colors" />
+                    
+                    <div className="flex items-center justify-between mb-12 relative z-10">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-bold text-2xl shadow-xl">
+                          {link.sourceNode?.id.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">用戶</p>
+                            {link.sourceNode?.id === 'jmarx5168' && (
+                              <span className="text-[9px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded uppercase tracking-tighter">討拍中心</span>
+                            )}
+                          </div>
+                          <p className="text-xl font-black text-slate-800">{link.sourceNode?.id}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-center px-6">
+                        <div className="flex items-center gap-1.5 text-red-500 mb-2">
+                          <Zap size={18} fill="currentColor" className="animate-pulse" />
+                          <span className="text-sm font-black uppercase tracking-tighter">糾葛戰力 {link.combatPower}</span>
+                        </div>
+                        <div className="h-px w-32 bg-gradient-to-r from-transparent via-red-200 to-transparent" />
+                      </div>
+
+                      <div className="flex items-center gap-4 text-right">
+                        <div>
+                          <div className="flex items-center gap-2 justify-end">
+                            {link.targetNode?.id === 'chinchin1010' && (
+                              <span className="text-[9px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded uppercase tracking-tighter">討拍中心</span>
+                            )}
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">主播</p>
+                          </div>
+                          <p className="text-xl font-black text-slate-800">{link.targetNode?.id}</p>
+                        </div>
+                        <div className="w-16 h-16 rounded-2xl bg-red-500 flex items-center justify-center text-white font-bold text-2xl shadow-xl shadow-red-100">
+                          {link.targetNode?.id.charAt(0).toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-8 relative z-10">
+                      {/* User's Message (The Trigger) */}
+                      {link.lastMessage && (
+                        <div className="flex flex-col items-start max-w-[90%]">
+                          <div className="flex items-center gap-2 mb-2 ml-4">
+                            <User size={12} className="text-slate-400" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">USER TRIGGER</p>
+                          </div>
+                          <div className="bg-slate-100 p-6 rounded-[2rem] rounded-tl-none shadow-sm border border-slate-200/50">
+                            <p className="text-sm md:text-base text-slate-700 font-bold leading-relaxed italic">"{link.lastMessage}"</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Streamer's Responses (The Entanglement) */}
+                      <div className="flex flex-col items-end space-y-4">
+                        <div className="flex items-center gap-2 mb-2 mr-4">
+                          <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">STREAMER REACTION</p>
+                          <MessageCircle size={12} className="text-red-400" />
+                        </div>
+                        {(link as any).filteredStreamerMessages?.map((msg: string, mIdx: number) => (
+                          <motion.div 
+                            initial={{ opacity: 0, x: 20 }}
+                            whileInView={{ opacity: 1, x: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: mIdx * 0.1 }}
+                            key={mIdx} 
+                            className="bg-red-50 p-6 rounded-[2rem] rounded-tr-none border border-red-100/50 max-w-[90%] shadow-sm hover:bg-red-100/30 transition-colors"
+                          >
+                            <p className="text-sm md:text-base text-red-900 font-black leading-relaxed">"{msg}"</p>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Footer Analysis */}
+                    <div className="mt-12 pt-8 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">情感張力高壓偵測中</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-xs font-black text-red-600 bg-red-50 px-4 py-2 rounded-2xl uppercase tracking-widest border border-red-100">
+                          {(link.sentimentScore || 0) < 30 ? '💔 關係冰點' : '⚡ 高壓互動'}
+                        </div>
+                        <div className="text-xs font-black text-orange-600 bg-orange-50 px-4 py-2 rounded-2xl uppercase tracking-widest border border-orange-100">
+                          🔥 糾葛戰力 {link.combatPower}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
