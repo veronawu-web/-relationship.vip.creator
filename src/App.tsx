@@ -12,6 +12,21 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isLegendExpanded, setIsLegendExpanded] = useState(false);
+  const [password, setPassword] = useState('');
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === '1159') {
+      setIsAuthorized(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+      setPassword('');
+    }
+  };
+
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
   const zoomToNodes = useCallback((nodeIds: Set<string>) => {
@@ -94,7 +109,7 @@ export default function App() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!svgRef.current) return;
+    if (!svgRef.current || !isAuthorized) return;
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -342,7 +357,7 @@ export default function App() {
       simulation.stop();
       window.removeEventListener('resize', updateDimensions);
     };
-  }, []);
+  }, [isAuthorized]);
 
   // Separate effect for search highlighting
   useEffect(() => {
@@ -387,7 +402,59 @@ export default function App() {
       const tId = typeof d.target === 'string' ? d.target : d.target.id;
       return (matchedIds.has(sId) || matchedIds.has(tId)) ? 0.6 : 0.02;
     });
-  }, [searchQuery]);
+  }, [searchQuery, isAuthorized]);
+
+  if (!isAuthorized) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-[#f8faff] font-sans relative overflow-hidden">
+        {/* Background Elements */}
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-400/10 blur-[120px] rounded-full animate-pulse-slow" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-400/10 blur-[120px] rounded-full animate-pulse-slow" style={{ animationDelay: '-4s' }} />
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-8 md:p-12 rounded-[40px] shadow-2xl border border-white/60 bg-white/80 backdrop-blur-xl z-10 w-full max-w-md mx-4"
+        >
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="p-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl text-white shadow-xl shadow-blue-200 mb-6">
+              <Shield size={32} />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">隱私保護</h1>
+            <p className="text-slate-500 text-sm">請輸入存取密碼以查看情感線熱點圖</p>
+          </div>
+
+          <form onSubmit={handlePasswordSubmit} className="space-y-6">
+            <div className="relative">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="請輸入密碼"
+                className={`w-full h-14 px-6 rounded-2xl bg-white border ${passwordError ? 'border-red-400' : 'border-slate-200'} focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-center text-lg tracking-[0.5em] font-bold text-slate-700 placeholder:tracking-normal placeholder:font-normal`}
+                autoFocus
+              />
+              {passwordError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute -bottom-6 left-0 right-0 text-center text-xs font-bold text-red-500"
+                >
+                  密碼錯誤，請重新輸入
+                </motion.p>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="w-full h-14 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold shadow-lg shadow-blue-200 hover:shadow-blue-300 hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              進入系統
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="relative w-full h-screen overflow-hidden font-sans bg-[#f8faff]">
@@ -471,7 +538,7 @@ export default function App() {
                               </div>
                               <div className="pl-2 border-l border-slate-200 space-y-1.5">
                                 <div className="text-[10px] text-slate-400 italic">
-                                  "精選對話：{l.intensity > 0.7 ? '你是我最信任的人，沒有你我不知道該怎麼辦...' : '謝謝你的支持，我會繼續努力的。'}"
+                                  "精選對話：{l.lastMessage || (l.intensity > 0.7 ? '你是我最信任的人，沒有你我不知道該怎麼辦...' : '謝謝你的支持，我會繼續努力的。')}"
                                 </div>
                                 <div className="text-[9px] font-bold text-blue-500/70 uppercase tracking-tighter">
                                   摘要：{l.intensity > 0.8 ? '情感深度連結，存在強烈的情緒依賴與排他性。' : '關係穩定，雙方在互動中獲得正向情緒價值。'}
@@ -616,7 +683,21 @@ export default function App() {
                     </span>
                   </div>
 
-                  {selectedNode.lastMessage && (
+                  {selectedNode.messages && selectedNode.messages.length > 0 ? (
+                    <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner max-h-[200px] overflow-y-auto custom-scrollbar">
+                      <div className="flex items-center gap-2 mb-3 text-slate-400">
+                        <MessageCircle size={14} />
+                        <span className="text-[10px] font-bold uppercase">對話精選</span>
+                      </div>
+                      <div className="space-y-3">
+                        {selectedNode.messages.map((msg, idx) => (
+                          <p key={idx} className="text-sm text-slate-600 italic leading-relaxed border-l-2 border-slate-200 pl-3">
+                            "{msg}"
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : selectedNode.lastMessage && (
                     <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner">
                       <div className="flex items-center gap-2 mb-2 text-slate-400">
                         <MessageCircle size={14} />

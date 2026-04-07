@@ -5,6 +5,7 @@ export interface Node extends d3.SimulationNodeDatum {
   group: 'core' | 'high' | 'support' | 'cool';
   val: number;
   lastMessage?: string;
+  messages?: string[];
 }
 
 export interface Link extends d3.SimulationLinkDatum<Node> {
@@ -12,4 +13,5 @@ export interface Link extends d3.SimulationLinkDatum<Node> {
   target: string;
   value: number;
   intensity: number; // 0-1
+  lastMessage?: string;
 }
