@@ -158,7 +158,7 @@ export default function App() {
   }, [streamerDialogues]);
 
   useEffect(() => {
-    if (!svgRef.current || !isAuthorized || activeTab !== 'heatmap') return;
+    if (!svgRef.current || !isAuthorized) return;
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -519,13 +519,14 @@ export default function App() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-pink-300/5 blur-[150px] rounded-full animate-float" />
 
       {/* Main SVG Visualization */}
-      {activeTab === 'heatmap' && (
-        <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
-      )}
+      <svg 
+        ref={svgRef} 
+        className={`w-full h-full cursor-grab active:cursor-grabbing absolute inset-0 transition-opacity duration-500 ${activeTab === 'heatmap' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
+      />
 
       {/* Dialogue Tab */}
       {activeTab === 'dialogue' && (
-        <div className="w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50">
+        <div className="relative w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50 z-10">
           <div className="max-w-6xl mx-auto space-y-8">
             {/* Sentiment Analysis Chart */}
             <motion.div 
@@ -644,7 +645,7 @@ export default function App() {
 
       {/* Entanglement Tab */}
       {activeTab === 'entanglement' && (
-        <div className="w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50">
+        <div className="relative w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50 z-10">
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex flex-col items-center mb-12">
               <div className="w-16 h-16 rounded-3xl bg-red-500 flex items-center justify-center text-white shadow-xl shadow-red-200 mb-4">
