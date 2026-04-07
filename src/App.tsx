@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand, ZoomIn, ZoomOut } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Heart, MessageCircle, Zap, Shield, User, Info, Activity, Search, X, Hand, ZoomIn, ZoomOut, MessageSquare, Flame, Thermometer } from 'lucide-react';
 import { NODES, LINKS } from './constants';
 import { Node, Link } from './types';
 
@@ -15,6 +16,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
+  const [activeTab, setActiveTab] = useState<'heatmap' | 'dialogue' | 'entanglement'>('heatmap');
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,8 +110,55 @@ export default function App() {
     );
   }, [searchQuery]);
 
+  const entanglementData = useMemo(() => {
+    const keywords = ['封鎖', '吵架', '難過', '失望', '壓力', '控制', '放棄', '生氣', '不爽', '冷暴力', '止損', '偏執', '痛苦', '排擠', '禁言', '跨不出去', '煎熬', '走心', '遺忘', '欺負', '對不起', '沒辦法', '結束', '拒絕', '累', '不想見面'];
+    const excludeKeywords = ['愛你', '想你', '啾咪', '嘻嘻', '麼麼', '寶貝', '甜蜜', '專屬', '寵', '羞', '❤️', '😻', '💋', '夢到我'];
+    
+    return LINKS.filter(link => {
+      const allMsgs = [
+        ...(link.streamerMessages || []),
+        link.lastMessage || ''
+      ];
+      
+      // Check if any message contains a conflict keyword
+      const hasConflict = allMsgs.some(msg => keywords.some(k => msg.includes(k)));
+      
+      return hasConflict;
+    }).map(link => {
+      const sourceNode = NODES.find(n => n.id === (typeof link.source === 'string' ? link.source : (link.source as any).id));
+      const targetNode = NODES.find(n => n.id === (typeof link.target === 'string' ? link.target : (link.target as any).id));
+      
+      // Filter the messages shown in entanglement to exclude purely coquettish ones
+      const filteredStreamerMessages = (link.streamerMessages || []).filter(msg => {
+        const isCoquettish = excludeKeywords.some(ek => msg.includes(ek)) && !keywords.some(k => msg.includes(k));
+        return !isCoquettish;
+      });
+
+      return { ...link, sourceNode, targetNode, filteredStreamerMessages };
+    });
+  }, []);
+
+  const streamerDialogues = useMemo(() => {
+    return LINKS.filter(link => link.streamerMessages && link.streamerMessages.length > 0)
+      .map(link => {
+        const sourceNode = NODES.find(n => n.id === (typeof link.source === 'string' ? link.source : (link.source as any).id));
+        const targetNode = NODES.find(n => n.id === (typeof link.target === 'string' ? link.target : (link.target as any).id));
+        return { ...link, sourceNode, targetNode };
+      })
+      .sort((a, b) => (b.sentimentScore || 0) - (a.sentimentScore || 0));
+  }, []);
+
+  const sentimentChartData = useMemo(() => {
+    return streamerDialogues.map(d => ({
+      name: `${d.targetNode?.id} ➔ ${d.sourceNode?.id}`,
+      score: d.sentimentScore || 0,
+      streamer: d.targetNode?.id,
+      user: d.sourceNode?.id
+    }));
+  }, [streamerDialogues]);
+
   useEffect(() => {
-    if (!svgRef.current || !isAuthorized) return;
+    if (!svgRef.current || !isAuthorized || activeTab !== 'heatmap') return;
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -242,14 +291,18 @@ export default function App() {
       .attr('r', d => 30 + (d.val / 2))
       .attr('fill', d => {
         if (d.group === 'core') return 'rgba(255, 255, 255, 0.9)';
-        if (d.group === 'high') return 'rgba(255, 55, 95, 0.08)';
-        if (d.group === 'support') return 'rgba(191, 90, 242, 0.08)';
+        if (d.group === 'anxious') return 'rgba(255, 55, 95, 0.08)';
+        if (d.group === 'secure') return 'rgba(191, 90, 242, 0.08)';
+        if (d.group === 'avoidant') return 'rgba(0, 122, 255, 0.08)';
+        if (d.group === 'disorganized') return 'rgba(255, 149, 0, 0.08)';
         return 'rgba(0, 122, 255, 0.05)';
       })
       .attr('stroke', d => {
         if (d.group === 'core') return '#007AFF';
-        if (d.group === 'high') return '#FF375F';
-        if (d.group === 'support') return '#BF5AF2';
+        if (d.group === 'anxious') return '#FF375F';
+        if (d.group === 'secure') return '#BF5AF2';
+        if (d.group === 'avoidant') return '#007AFF';
+        if (d.group === 'disorganized') return '#FF9500';
         return '#007AFF';
       })
       .attr('stroke-width', 1.5)
@@ -263,8 +316,10 @@ export default function App() {
       .attr('fill', 'none')
       .attr('stroke', d => {
         if (d.group === 'core') return 'rgba(0, 122, 255, 0.2)';
-        if (d.group === 'high') return 'rgba(255, 55, 95, 0.2)';
-        if (d.group === 'support') return 'rgba(191, 90, 242, 0.2)';
+        if (d.group === 'anxious') return 'rgba(255, 55, 95, 0.2)';
+        if (d.group === 'secure') return 'rgba(191, 90, 242, 0.2)';
+        if (d.group === 'avoidant') return 'rgba(0, 122, 255, 0.2)';
+        if (d.group === 'disorganized') return 'rgba(255, 149, 0, 0.2)';
         return 'rgba(0, 122, 255, 0.1)';
       })
       .attr('stroke-width', 1)
@@ -287,7 +342,7 @@ export default function App() {
       .attr('height', 24)
       .style('pointer-events', 'none') // Ensure clicks pass through to the node hit area
       .html(d => {
-        const color = d.group === 'high' ? '#FF375F' : d.group === 'support' ? '#BF5AF2' : '#007AFF';
+        const color = d.group === 'anxious' ? '#FF375F' : d.group === 'secure' ? '#BF5AF2' : d.group === 'avoidant' ? '#007AFF' : d.group === 'disorganized' ? '#FF9500' : '#007AFF';
         if (d.group === 'core') return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div>`;
         return `<div style="color: ${color}; pointer-events: none;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg></div>`;
       });
@@ -464,7 +519,225 @@ export default function App() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-pink-300/5 blur-[150px] rounded-full animate-float" />
 
       {/* Main SVG Visualization */}
-      <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      {activeTab === 'heatmap' && (
+        <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      )}
+
+      {/* Dialogue Tab */}
+      {activeTab === 'dialogue' && (
+        <div className="w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50">
+          <div className="max-w-6xl mx-auto space-y-8">
+            {/* Sentiment Analysis Chart */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass-card p-8 rounded-[32px] border border-white/60 shadow-xl bg-white/90"
+            >
+              <div className="flex items-center gap-3 mb-8">
+                <div className="p-2 bg-blue-500 rounded-xl text-white shadow-lg shadow-blue-100">
+                  <Thermometer size={20} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">主播態度溫度計</h2>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Sentiment Analysis (Cold to Passionate)</p>
+                </div>
+              </div>
+              
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sentimentChartData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                    <XAxis type="number" domain={[0, 100]} hide />
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      width={150} 
+                      axisLine={false} 
+                      tickLine={false}
+                      tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }}
+                    />
+                    <Tooltip 
+                      cursor={{ fill: '#f8fafc' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
+                              <p className="text-xs font-bold text-slate-800 mb-1">{data.name}</p>
+                              <p className="text-sm font-bold text-blue-600">情感溫度：{data.score}%</p>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                {data.score > 70 ? '🔥 熱情互動中' : data.score > 40 ? '🌤️ 穩定交流' : '❄️ 態度冷淡'}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="score" radius={[0, 10, 10, 0]} barSize={20}>
+                      {sentimentChartData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.score > 70 ? '#3b82f6' : entry.score > 40 ? '#94a3b8' : '#cbd5e1'} 
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {streamerDialogues.map((link, idx) => (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  key={idx} 
+                  className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl bg-white/80 relative overflow-hidden"
+                >
+                  {/* Status Indicator */}
+                  <div className={`absolute top-0 right-0 px-4 py-1 rounded-bl-2xl text-[10px] font-bold text-white shadow-sm ${
+                    (link.sentimentScore || 0) > 70 ? 'bg-blue-500' : 
+                    (link.sentimentScore || 0) > 40 ? 'bg-slate-400' : 'bg-slate-300'
+                  }`}>
+                    {(link.sentimentScore || 0) > 70 ? '熱情' : (link.sentimentScore || 0) > 40 ? '一般' : '冷淡'}
+                  </div>
+
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg shadow-inner">
+                        {link.targetNode?.id.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">主播</p>
+                        <p className="text-base font-bold text-slate-800">{link.targetNode?.id}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <div className="text-[10px] font-bold text-blue-500 mb-1">{(link.sentimentScore || 0)}°C</div>
+                      <div className="h-px w-12 bg-slate-100" />
+                    </div>
+                    <div className="flex items-center gap-3 text-right">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">對象</p>
+                        <p className="text-base font-bold text-slate-800">{link.sourceNode?.id}</p>
+                      </div>
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg shadow-inner">
+                        {link.sourceNode?.id.charAt(0).toUpperCase()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {link.streamerMessages?.map((msg, mIdx) => (
+                      <div key={mIdx} className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50 group hover:bg-white transition-colors">
+                        <p className="text-sm text-slate-700 leading-relaxed">"{msg}"</p>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Entanglement Tab */}
+      {activeTab === 'entanglement' && (
+        <div className="w-full h-full pt-32 pb-12 px-6 md:px-12 overflow-y-auto custom-scrollbar bg-slate-50/50">
+          <div className="max-w-4xl mx-auto space-y-8">
+            <div className="flex flex-col items-center mb-12">
+              <div className="w-16 h-16 rounded-3xl bg-red-500 flex items-center justify-center text-white shadow-xl shadow-red-200 mb-4">
+                <Flame size={32} />
+              </div>
+              <h1 className="text-3xl font-bold text-slate-800">情感糾葛錄</h1>
+              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">Emotional Tension & Conflict Records</p>
+            </div>
+
+            {entanglementData.map((link, idx) => (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: idx * 0.1 }}
+                key={idx} 
+                className="glass-card p-8 rounded-[40px] border border-red-100/50 shadow-2xl bg-white/95 relative overflow-hidden"
+              >
+                {/* Background Accent */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
+                
+                <div className="flex items-center justify-between mb-10 relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                      {link.sourceNode?.id.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">用戶</p>
+                      <p className="text-lg font-bold text-slate-800">{link.sourceNode?.id}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center px-4">
+                    <div className="flex items-center gap-1 text-red-500 mb-1">
+                      <Zap size={14} fill="currentColor" />
+                      <span className="text-xs font-black uppercase tracking-tighter">張力</span>
+                    </div>
+                    <div className="h-px w-24 bg-gradient-to-r from-transparent via-red-200 to-transparent" />
+                  </div>
+
+                  <div className="flex items-center gap-4 text-right">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">主播</p>
+                      <p className="text-lg font-bold text-slate-800">{link.targetNode?.id}</p>
+                    </div>
+                    <div className="w-14 h-14 rounded-2xl bg-red-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-100">
+                      {link.targetNode?.id.charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6 relative z-10">
+                  {/* User's Message (The Trigger) */}
+                  {link.lastMessage && (
+                    <div className="flex flex-col items-start max-w-[85%]">
+                      <p className="text-[10px] font-bold text-slate-400 mb-1 ml-4">USER SIDE</p>
+                      <div className="bg-slate-100 p-5 rounded-3xl rounded-tl-none shadow-sm border border-slate-200/50">
+                        <p className="text-sm text-slate-700 font-medium leading-relaxed italic">"{link.lastMessage}"</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Streamer's Responses (The Entanglement) */}
+                  <div className="flex flex-col items-end space-y-3">
+                    <p className="text-[10px] font-bold text-red-400 mb-1 mr-4">STREAMER SIDE</p>
+                    {(link as any).filteredStreamerMessages?.map((msg: string, mIdx: number) => (
+                      <motion.div 
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 + mIdx * 0.1 }}
+                        key={mIdx} 
+                        className="bg-red-50 p-5 rounded-3xl rounded-tr-none border border-red-100/50 max-w-[85%] shadow-sm"
+                      >
+                        <p className="text-sm text-red-800 font-bold leading-relaxed">"{msg}"</p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer Analysis */}
+                <div className="mt-10 pt-6 border-t border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">情緒張力偵測中</span>
+                  </div>
+                  <div className="text-[10px] font-black text-red-500 bg-red-50 px-3 py-1 rounded-full uppercase tracking-widest">
+                    {(link.sentimentScore || 0) < 30 ? '關係冰點' : '高壓互動'}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* UI Overlay: Header & Search */}
       <div className="absolute top-4 left-4 md:top-8 md:left-8 z-20 flex flex-col gap-3 md:gap-4 items-start">
@@ -475,36 +748,60 @@ export default function App() {
             </div>
             <h1 className="text-base md:text-xl font-bold tracking-tight text-slate-800">情感線熱點圖</h1>
           </div>
-          <p className="hidden md:block text-sm text-slate-500 leading-relaxed mt-2 max-w-xs">
-            基於訊息頻率與關鍵字分析，呈現主播與大哥之間的互動張力。
-          </p>
-        </div>
-
-        {/* Search Bar (Now always visible for better accessibility) */}
-        <div className="glass-card w-64 md:w-80 h-12 rounded-2xl flex items-center overflow-hidden border border-white/40 shadow-lg bg-white/60 backdrop-blur-md">
-          <div className="min-w-[44px] h-full flex items-center justify-center text-slate-500">
-            <Search size={18} />
-          </div>
-          <input 
-            type="text"
-            placeholder="搜尋用戶或主播..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 pr-2"
-          />
-          {searchQuery && (
+          
+          {/* Tab Switcher */}
+          <div className="flex gap-1 mt-4 p-1 bg-slate-100/50 rounded-xl border border-slate-200/50">
             <button 
-              onClick={() => setSearchQuery('')}
-              className="pr-3 text-slate-400 hover:text-slate-600"
+              onClick={() => setActiveTab('heatmap')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'heatmap' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              <X size={14} />
+              <Activity size={14} />
+              熱點圖
             </button>
-          )}
+            <button 
+              onClick={() => setActiveTab('dialogue')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'dialogue' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <MessageSquare size={14} />
+              主播對話
+            </button>
+            <button 
+              onClick={() => setActiveTab('entanglement')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'entanglement' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Flame size={14} />
+              情感糾葛
+            </button>
+          </div>
         </div>
 
-        {/* Search Results Summary */}
+        {/* Search Bar (Only in Heatmap) */}
+        {activeTab === 'heatmap' && (
+          <div className="glass-card w-64 md:w-80 h-12 rounded-2xl flex items-center overflow-hidden border border-white/40 shadow-lg bg-white/60 backdrop-blur-md">
+            <div className="min-w-[44px] h-full flex items-center justify-center text-slate-500">
+              <Search size={18} />
+            </div>
+            <input 
+              type="text"
+              placeholder="搜尋用戶或主播..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 pr-2"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="pr-3 text-slate-400 hover:text-slate-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Search Results Summary (Only in Heatmap) */}
         <AnimatePresence>
-          {searchQuery && (
+          {activeTab === 'heatmap' && searchQuery && (
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -589,13 +886,16 @@ export default function App() {
                 className="flex flex-col gap-3 px-2 pb-2 min-w-[160px]"
               >
                 <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#FF375F] shadow-[0_0_8px_rgba(255,55,95,0.6)]" /> 高強度 (焦慮/依賴)
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#FF375F] shadow-[0_0_8px_rgba(255,55,95,0.6)]" /> 焦慮型 (Anxious)
                 </div>
                 <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#BF5AF2] shadow-[0_0_8px_rgba(191,90,242,0.6)]" /> 支持型 (穩定/共感)
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#BF5AF2] shadow-[0_0_8px_rgba(191,90,242,0.6)]" /> 安全型 (Secure)
                 </div>
                 <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#007AFF] shadow-[0_0_8px_rgba(0,122,255,0.6)]" /> 冷靜型 (單向/失落)
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#007AFF] shadow-[0_0_8px_rgba(0,122,255,0.6)]" /> 逃避型 (Avoidant)
+                </div>
+                <div className="flex items-center gap-3 text-[10px] md:text-xs font-bold text-slate-600">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#FF9500] shadow-[0_0_8px_rgba(255,149,0,0.6)]" /> 混亂型 (Disorganized)
                 </div>
               </motion.div>
             )}
@@ -604,123 +904,127 @@ export default function App() {
       </div>
 
       {/* UI Overlay: View Controls */}
-      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-30 flex flex-col gap-3 md:gap-4 items-end">
-        <div className="flex flex-col gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleZoom('in')}
-            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
-            title="放大"
-          >
-            <ZoomIn size={18} className="text-blue-500" />
-          </motion.button>
-          
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleZoom('out')}
-            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
-            title="縮小"
-          >
-            <ZoomOut size={18} className="text-blue-500" />
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={fitToScreen}
-            className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
-            title="移動至視圖中心"
-          >
-            <Hand size={18} className="text-purple-500" />
-          </motion.button>
-        </div>
-
-        {/* UI Overlay: Detail Panel */}
-        <AnimatePresence>
-          {selectedNode && (
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="w-80"
+      {activeTab === 'heatmap' && (
+        <div className="absolute top-4 right-4 md:top-8 md:right-8 z-30 flex flex-col gap-3 md:gap-4 items-end">
+          <div className="flex flex-col gap-2">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleZoom('in')}
+              className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+              title="放大"
             >
-              <div className="glass-card p-6 rounded-3xl overflow-hidden relative border border-white/60 shadow-2xl">
-                {/* Decorative Glow */}
-                <div className={`absolute top-0 right-0 w-24 h-24 blur-3xl opacity-20 ${
-                  selectedNode.group === 'high' ? 'bg-pink-500' : 
-                  selectedNode.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
-                }`} />
+              <ZoomIn size={18} className="text-blue-500" />
+            </motion.button>
+            
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleZoom('out')}
+              className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+              title="縮小"
+            >
+              <ZoomOut size={18} className="text-blue-500" />
+            </motion.button>
 
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                      {selectedNode.group} Intensity
-                    </span>
-                    <div className="p-1.5 bg-slate-100 rounded-full">
-                      <User size={14} className="text-slate-500" />
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={fitToScreen}
+              className="glass-card w-11 h-11 rounded-full flex items-center justify-center text-slate-700 font-bold border border-white/40 shadow-lg bg-white/40 backdrop-blur-md hover:bg-white/60"
+              title="移動至視圖中心"
+            >
+              <Hand size={18} className="text-purple-500" />
+            </motion.button>
+          </div>
+
+          {/* UI Overlay: Detail Panel */}
+          <AnimatePresence>
+            {selectedNode && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                className="w-80"
+              >
+                <div className="glass-card p-6 rounded-3xl overflow-hidden relative border border-white/60 shadow-2xl">
+                  {/* Decorative Glow */}
+                  <div className={`absolute top-0 right-0 w-24 h-24 blur-3xl opacity-20 ${
+                    selectedNode.group === 'anxious' ? 'bg-pink-500' : 
+                    selectedNode.group === 'secure' ? 'bg-purple-500' : 
+                    selectedNode.group === 'avoidant' ? 'bg-blue-500' : 'bg-orange-500'
+                  }`} />
+
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                        {selectedNode.attachmentType || '依附關係分析'}
+                      </span>
+                      <div className="p-1.5 bg-slate-100 rounded-full">
+                        <User size={14} className="text-slate-500" />
+                      </div>
                     </div>
+
+                    <h2 className="text-2xl font-bold text-slate-800 mb-1">
+                      {selectedNode.id}
+                    </h2>
+                    
+                    <div className="flex items-center gap-2 mb-6">
+                      <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${selectedNode.val || 0}%` }}
+                          className={`h-full ${
+                            selectedNode.group === 'anxious' ? 'bg-pink-500' : 
+                            selectedNode.group === 'secure' ? 'bg-purple-500' : 
+                            selectedNode.group === 'avoidant' ? 'bg-blue-500' : 'bg-orange-500'
+                          }`}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-slate-400">
+                        {selectedNode.val}%
+                      </span>
+                    </div>
+
+                    {selectedNode.messages && selectedNode.messages.length > 0 ? (
+                      <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner max-h-[200px] overflow-y-auto custom-scrollbar">
+                        <div className="flex items-center gap-2 mb-3 text-slate-400">
+                          <MessageCircle size={14} />
+                          <span className="text-[10px] font-bold uppercase">對話精選</span>
+                        </div>
+                        <div className="space-y-3">
+                          {selectedNode.messages.map((msg, idx) => (
+                            <p key={idx} className="text-sm text-slate-600 italic leading-relaxed border-l-2 border-slate-200 pl-3">
+                              "{msg}"
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : selectedNode.lastMessage && (
+                      <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner">
+                        <div className="flex items-center gap-2 mb-2 text-slate-400">
+                          <MessageCircle size={14} />
+                          <span className="text-[10px] font-bold uppercase">核心語錄</span>
+                        </div>
+                        <p className="text-sm text-slate-600 italic leading-relaxed">
+                          "{selectedNode.lastMessage}"
+                        </p>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={() => setSelectedNode(null)}
+                      className="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm font-bold hover:from-slate-700 hover:to-slate-800 transition-all shadow-lg shadow-slate-200"
+                    >
+                      關閉詳情
+                    </button>
                   </div>
-
-                  <h2 className="text-2xl font-bold text-slate-800 mb-1">
-                    {selectedNode.id}
-                  </h2>
-                  
-                  <div className="flex items-center gap-2 mb-6">
-                    <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${selectedNode.val || 0}%` }}
-                        className={`h-full ${
-                          selectedNode.group === 'high' ? 'bg-pink-500' : 
-                          selectedNode.group === 'support' ? 'bg-purple-500' : 'bg-blue-500'
-                        }`}
-                      />
-                    </div>
-                    <span className="text-xs font-bold text-slate-400">
-                      {selectedNode.val}%
-                    </span>
-                  </div>
-
-                  {selectedNode.messages && selectedNode.messages.length > 0 ? (
-                    <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner max-h-[200px] overflow-y-auto custom-scrollbar">
-                      <div className="flex items-center gap-2 mb-3 text-slate-400">
-                        <MessageCircle size={14} />
-                        <span className="text-[10px] font-bold uppercase">對話精選</span>
-                      </div>
-                      <div className="space-y-3">
-                        {selectedNode.messages.map((msg, idx) => (
-                          <p key={idx} className="text-sm text-slate-600 italic leading-relaxed border-l-2 border-slate-200 pl-3">
-                            "{msg}"
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  ) : selectedNode.lastMessage && (
-                    <div className="bg-white/50 p-4 rounded-2xl border border-white/80 shadow-inner">
-                      <div className="flex items-center gap-2 mb-2 text-slate-400">
-                        <MessageCircle size={14} />
-                        <span className="text-[10px] font-bold uppercase">核心語錄</span>
-                      </div>
-                      <p className="text-sm text-slate-600 italic leading-relaxed">
-                        "{selectedNode.lastMessage}"
-                      </p>
-                    </div>
-                  )}
-
-                  <button 
-                    onClick={() => setSelectedNode(null)}
-                    className="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm font-bold hover:from-slate-700 hover:to-slate-800 transition-all shadow-lg shadow-slate-200"
-                  >
-                    關閉詳情
-                  </button>
                 </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Floating Decorative Objects */}
       <div className="absolute top-1/4 right-1/4 w-4 h-4 bg-white rounded-full blur-sm animate-float opacity-40 pointer-events-none" />
