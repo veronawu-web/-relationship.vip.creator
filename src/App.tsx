@@ -201,13 +201,22 @@ export default function App() {
       d.fy = null;
     });
 
+    // Filter out any links between streamers (core to core)
+    const validLinks = LINKS.filter(link => {
+      const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
+      const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+      const sourceNode = NODES.find(n => n.id === sourceId);
+      const targetNode = NODES.find(n => n.id === targetId);
+      return !(sourceNode?.group === 'core' && targetNode?.group === 'core');
+    });
+
     const simulation = d3.forceSimulation<Node>(NODES)
-      .force('link', d3.forceLink<Node, Link>(LINKS).id(d => d.id).distance(80))
-      .force('charge', d3.forceManyBody().strength(-600))
+      .force('link', d3.forceLink<Node, Link>(validLinks).id(d => d.id).distance(120))
+      .force('charge', d3.forceManyBody().strength((d: any) => d.group === 'core' ? -2000 : -500))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('x', d3.forceX(width / 2).strength(0.1))
-      .force('y', d3.forceY(height / 2).strength(0.1))
-      .force('collision', d3.forceCollide().radius(100))
+      .force('x', d3.forceX(width / 2).strength(0.05))
+      .force('y', d3.forceY(height / 2).strength(0.05))
+      .force('collision', d3.forceCollide().radius((d: any) => d.group === 'core' ? 120 : 80))
       .stop();
 
     // Run simulation for a few ticks to get stable positions, then fix them
@@ -242,17 +251,20 @@ export default function App() {
     const labelsGroupLayer = g.append('g').attr('class', 'labels-layer'); // New layer for labels to stay on top
     
     const link = linkGroup.selectAll('line')
-      .data(LINKS)
+      .data(validLinks)
       .enter().append('line')
       .attr('stroke', 'url(#link-gradient)')
       .attr('stroke-opacity', d => 0.2 + d.intensity * 0.5)
       .attr('stroke-width', d => 2 + d.intensity * 6)
       .attr('stroke-linecap', 'round')
-      .style('pointer-events', 'none');
+      .attr('stroke-dasharray', '10,10')
+      .attr('class', 'animate-flow')
+      .style('pointer-events', 'none')
+      .style('filter', 'url(#glow)');
 
     // Add invisible wider lines for better interaction
     const linkHitArea = linkGroup.selectAll('line.hit-area')
-      .data(LINKS)
+      .data(validLinks)
       .enter().append('line')
       .attr('class', 'hit-area')
       .attr('stroke', 'transparent')
@@ -315,15 +327,16 @@ export default function App() {
       .attr('r', d => 35 + (d.val / 2))
       .attr('fill', 'none')
       .attr('stroke', d => {
-        if (d.group === 'core') return 'rgba(0, 122, 255, 0.2)';
+        if (d.group === 'core') return 'rgba(0, 122, 255, 0.4)';
         if (d.group === 'anxious') return 'rgba(255, 55, 95, 0.2)';
         if (d.group === 'secure') return 'rgba(191, 90, 242, 0.2)';
         if (d.group === 'avoidant') return 'rgba(0, 122, 255, 0.2)';
         if (d.group === 'disorganized') return 'rgba(255, 149, 0, 0.2)';
         return 'rgba(0, 122, 255, 0.1)';
       })
-      .attr('stroke-width', 1)
-      .attr('stroke-dasharray', '4,4')
+      .attr('stroke-width', d => d.group === 'core' ? 2 : 1)
+      .attr('stroke-dasharray', d => d.group === 'core' ? 'none' : '4,4')
+      .attr('class', d => d.group === 'core' ? 'animate-pulse-ring' : '')
       .style('pointer-events', 'none');
 
     node.append('text')
